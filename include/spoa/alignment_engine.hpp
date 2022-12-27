@@ -1,9 +1,5 @@
-// Copyright (c) 2020 Robert Vaser
-
 #ifndef SPOA_ALIGNMENT_ENGINE_HPP_
 #define SPOA_ALIGNMENT_ENGINE_HPP_
-
-#pragma once
 
 #include <cstdint>
 #include <memory>

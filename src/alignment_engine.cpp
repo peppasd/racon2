@@ -1,9 +1,7 @@
-// Copyright (c) 2020 Robert Vaser
-
 #include "spoa/alignment_engine.hpp"
 #include "spoa/simd_alignment_engine.hpp"
-#include "spoa/cuda_alignment_engine.hpp"
-#include "spoa/multithread_alignment_engine.hpp"
+// #include "spoa/cuda_alignment_engine.hpp"
+// #include "spoa/multithread_alignment_engine.hpp"
 
 #include <algorithm>
 #include <exception>
@@ -13,7 +11,6 @@
 namespace spoa
 {
 
-  // TODO
   std::unique_ptr<AlignmentEngine> AlignmentEngine::Create(
       AlignmentType type,
       std::int8_t m,
@@ -28,23 +25,23 @@ namespace spoa
     }
 
     auto dst = CreateSimdAlignmentEngine(m, n, g);
-    switch (type)
-    {
-    case AlignmentType::Simd:
-      dst = CreateSimdAlignmentEngine(m, n, g);
-      break;
-    case AlignmentType::Cuda:
-      dst = CreateCudaAlignmentEngine(m, n, g);
-      break;
-    case AlignmentType::Multithread:
-      dst = CreateMultithreadAlignmentEngine(m, n, g);
-      break;
-    default:
-      throw std::invalid_argument(
-          "[spoa::AlignmentEngine::Create] error: "
-          "invalid alignment type!");
-      break;
-    }
+    // switch (type)
+    // {
+    // case AlignmentType::Simd:
+    //   dst = CreateSimdAlignmentEngine(m, n, g);
+    //   break;
+    // case AlignmentType::Cuda:
+    //   dst = CreateCudaAlignmentEngine(m, n, g);
+    //   break;
+    // case AlignmentType::Multithread:
+    //   dst = CreateMultithreadAlignmentEngine(m, n, g);
+    //   break;
+    // default:
+    //   throw std::invalid_argument(
+    //       "[spoa::AlignmentEngine::Create] error: "
+    //       "invalid alignment type!");
+    //   break;
+    // }
     return dst;
   }
 
