@@ -1,0 +1,306 @@
+#pragma once
+
+#include <algorithm>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <vector>
+
+#include "mathutility.hpp"
+
+class DevicePreallocatedAllocator
+{
+public:
+    /// \brief Constructor
+    /// Allocates the buffer
+    /// \param buffer_size
+    DevicePreallocatedAllocator(size_t buffer_size)
+        : buffer_size_(buffer_size)
+        , buffer_ptr_(create_buffer(buffer_size_))
+    {
+        MemoryBlock whole_memory_block;
+        whole_memory_block.begin = 0;
+        whole_memory_block.size  = buffer_size_;
+        free_blocks_.push_back(whole_memory_block);
+    }
+
+    DevicePreallocatedAllocator()                                   = delete;
+    DevicePreallocatedAllocator(const DevicePreallocatedAllocator&) = delete;
+    DevicePreallocatedAllocator operator=(const DevicePreallocatedAllocator&) = delete;
+
+    DevicePreallocatedAllocator(DevicePreallocatedAllocator&&) = delete;
+    DevicePreallocatedAllocator operator=(DevicePreallocatedAllocator&&) = delete;
+
+    ~DevicePreallocatedAllocator() = default;
+    // ^^^^ buffer_ptr_'s destructor deallocates device memory
+
+    /// \brief allocates memory (assigns part of the buffer)
+    /// Memory allocation is aligned by 256 bytes
+    /// \param ptr on return pointer to allocated memory, nullptr if allocation was not successful
+    /// \param bytes_needed
+    /// \param associated_streams on deallocation this memory block is guaranteed to live at least until all previously scheduled work in these streams has finished
+    /// \return cudaSuccess if allocation was successful, cudaErrorMemoryAllocation otherwise
+    cudaError_t DeviceAllocate(void** ptr,
+                               size_t bytes_needed,
+                               const std::vector<cudaStream_t>& associated_streams)
+    {
+
+        std::lock_guard<std::mutex> mutex_lock_guard(memory_operation_mutex_);
+        return allocate_memory_block(ptr,
+                                     bytes_needed,
+                                     associated_streams);
+    }
+
+    /// \brief deallocates memory (returns its part of buffer to the list of free parts)
+    /// This function blocks until all work on associated_stream is done
+    /// \param ptr
+    /// \return cudaSuccess if deallocation was successful, cudaErrorInvalidValue otherwise
+    cudaError_t DeviceFree(void* ptr)
+    {
+        cudaError_t status = cudaSuccess;
+
+        if (nullptr != ptr)
+        {
+            std::lock_guard<std::mutex> mutex_lock_guard(memory_operation_mutex_);
+            status = free_memory_block(ptr);
+        }
+
+        return status;
+    }
+
+    /// @brief returns the size of the largest free memory block
+    int64_t get_size_of_largest_free_memory_block() const
+    {
+        size_t size = 0;
+        for (auto& block : free_blocks_)
+        {
+            size = std::max(size, block.size);
+        }
+        return static_cast<int64_t>(size);
+    }
+
+private:
+    /// \brief represents one part of the buffer, free or available
+    struct MemoryBlock
+    {
+        // byte in buffer at which this block starts
+        size_t begin;
+        // number of bytes in this block
+        size_t size;
+        // this block will get freed only once all previously scheduled work on these streams has finished
+        std::vector<cudaStream_t> associated_streams;
+    };
+
+    /// \brief allocates the underlying buffer
+    /// \param buffer_size
+    /// \return allocated shared_ptr
+    static std::unique_ptr<char, void (*)(char*)> create_buffer(size_t buffer_size)
+    {
+        // shared_ptr creation packed in a function so it can be used in constructor's initilaization list
+        void* ptr = nullptr;
+        cudaMalloc(&ptr, buffer_size);
+        auto ret_val = std::unique_ptr<char, void (*)(char*)>(static_cast<char*>(ptr),
+                                                              [](char* ptr) {
+                                                                  cudaFree(ptr);
+                                                              });
+        return ret_val;
+    }
+
+    /// \brief finds a memory block of the given size
+    /// \param ptr on return pointer to allocated memory, nullptr if allocation was not successful
+    /// \param bytes_needed
+    /// \param associated_streams on deallocation this memory block is guaranteed to live at least until all previously scheduled work in these streams has finished
+    /// \return cudaSuccess if allocation was successful, cudaErrorMemoryAllocation otherwise
+    cudaError_t allocate_memory_block(void** ptr,
+                                      const size_t bytes_needed,
+                                      const std::vector<cudaStream_t>& associated_streams)
+    {
+        if (free_blocks_.empty())
+        {
+            *ptr = nullptr;
+            return cudaErrorMemoryAllocation;
+        }
+
+        // ** look for first free block that can fit requested size
+        auto block_to_get_memory_from_iter = std::find_if(std::begin(free_blocks_),
+                                                          std::end(free_blocks_),
+                                                          [bytes_needed](const MemoryBlock& memory_block) {
+                                                              return memory_block.size >= bytes_needed;
+                                                          });
+
+        if (block_to_get_memory_from_iter == std::end(free_blocks_))
+        {
+            *ptr = nullptr;
+            return cudaErrorMemoryAllocation;
+        }
+
+        MemoryBlock new_memory_block{block_to_get_memory_from_iter->begin,
+                                     bytes_needed,
+                                     associated_streams};
+
+        // Allocations are aligned to alignment_ bytes. new_memory_block's size is exactly bytes_needed, but the part of
+        // the original memory block which remains unallocated should start at byte divisible by alignment_
+        const size_t rounded_up_bytes = roundup_next_multiple(bytes_needed, alignment_);
+
+        // ** reduce the size of the block the memory is going to be taken from
+        if (block_to_get_memory_from_iter->size <= rounded_up_bytes)
+        {
+            // this memory block is completely used, remove it
+            free_blocks_.erase(block_to_get_memory_from_iter);
+        }
+        else
+        {
+            // there will still be some memory left, update free block size
+            block_to_get_memory_from_iter->begin += rounded_up_bytes;
+            block_to_get_memory_from_iter->size -= rounded_up_bytes;
+        }
+
+        // ** add new used memory block to the list of used blocks
+
+        // look for the block right after the block that is to be added
+        auto insert_used_block_before_iter = std::find_if(std::begin(used_blocks_),
+                                                          std::end(used_blocks_),
+                                                          [&new_memory_block](const MemoryBlock& memory_block) {
+                                                              return memory_block.begin > new_memory_block.begin;
+                                                          });
+
+        // insert new block in the array
+        used_blocks_.insert(insert_used_block_before_iter, new_memory_block);
+
+        // set pointer to new location
+        *ptr = static_cast<void*>(buffer_ptr_.get() + new_memory_block.begin);
+        return cudaSuccess;
+    }
+
+    /// \brief releases the block starting at pointer
+    /// This function blocks until all work on associated_streams is done
+    /// \param pointer pointer at the begining of the block to be freed
+    /// \return cudaSuccess if release was successful, cudaErrorInvalidValue otherwise
+    cudaError_t free_memory_block(void* pointer)
+    {
+        assert(static_cast<char*>(pointer) >= buffer_ptr_.get());
+        const size_t block_start = static_cast<char*>(pointer) - buffer_ptr_.get();
+        assert(block_start < buffer_size_);
+
+        // ** look for pointer's memory block
+        auto block_to_be_freed_iter = std::find_if(std::begin(used_blocks_),
+                                                   std::end(used_blocks_),
+                                                   [block_start](const MemoryBlock& memory_block) {
+                                                       return memory_block.begin == block_start;
+                                                   });
+
+        // * return error if pointer is not valid
+        if (block_to_be_freed_iter == std::end(used_blocks_))
+        {
+            return cudaErrorInvalidValue;
+        }
+
+        // ** wait for all work on associated_streams to finish before freeing up this memory block
+        for (cudaStream_t associated_stream : block_to_be_freed_iter->associated_streams)
+        {
+            // WARNING: The way and place this synchronization is done might change in the future, do not rely on this cudaStreamSynchronize() in the caller.
+            // Guarantee that the memory will not be deallocated before all previously scheduled work on these streams will remain, but actual deallocation
+            // (and synchronization) might happen for example only when this memory block is actually requested by another allocation, which would make any
+            // code relying on an implicit synchronization here incorrect
+            cudaStreamSynchronize(associated_stream);
+        }
+
+        // ** find actual block size
+        // Allocations are aligned by alignment_ bytes. block_to_be_freed_iter->size is the exact number of requested bytes, but the block
+        // is actually allocated that-value-rounded-up-to-the-next-number-divisible-by-alignment_ bytes.
+        // One exception is the block that goes into the last alignment_-divisible block of allocated buffer. In that case actually
+        // allocated memory goes up to the end of the buffer, even if buffer's size is not divisible by alignment_. In this case number_of_bytes
+        // is not divisible by alignment_ but the length from the beginning of the block until the end of the buffer
+        const size_t number_of_bytes = std::min(roundup_next_multiple(block_to_be_freed_iter->size, alignment_), buffer_size_ - block_to_be_freed_iter->begin);
+
+        // ** remove memory block from the list of used memory blocks
+        used_blocks_.erase(block_to_be_freed_iter);
+
+        // ** add the block back the list of free blocks (and merge with any neighbouring free blocks)
+
+        // look for block immediately after the block that is to being freed
+        auto insert_free_block_before_iter = std::find_if(std::begin(free_blocks_),
+                                                          std::end(free_blocks_),
+                                                          [block_start](const MemoryBlock& memory_block) {
+                                                              return memory_block.begin > block_start;
+                                                          });
+
+        // * find the left neighbor and remove it if it is going to be be merged
+        MemoryBlock block_to_the_left;
+        if (std::begin(free_blocks_) == insert_free_block_before_iter)
+        {
+            // no left neighbor, create a virtual empty neighbor
+            block_to_the_left.begin = block_start;
+            block_to_the_left.size  = 0;
+        }
+        else
+        {
+            block_to_the_left = *std::prev(insert_free_block_before_iter);
+            if (block_to_the_left.begin + block_to_the_left.size == block_start)
+            {
+                // neighbor is "touching" this block and will be merged, remove it
+                free_blocks_.erase(std::prev(insert_free_block_before_iter));
+            }
+            else
+            {
+                // neighbor won't be merged, create a virtual empty neighbor
+                block_to_the_left.begin = block_start;
+                block_to_the_left.size  = 0;
+            }
+        }
+
+        // * find the right neighbor and remove if it is going to be be merged
+        MemoryBlock block_to_the_right;
+        if (std::end(free_blocks_) == insert_free_block_before_iter)
+        {
+            // no neighbor to the right, create a virtual empty neighbor
+            block_to_the_right.begin = block_start + number_of_bytes;
+            block_to_the_right.size  = 0;
+        }
+        else
+        {
+            block_to_the_right = *insert_free_block_before_iter;
+            if (block_start + number_of_bytes == block_to_the_right.begin)
+            {
+                // neighbor is "touching" this block and will be merged, remove it
+                auto iter_past_right_neighbor = std::next(insert_free_block_before_iter);
+                free_blocks_.erase(insert_free_block_before_iter);
+                insert_free_block_before_iter = iter_past_right_neighbor;
+            }
+            else
+            {
+                // neighbor won't be merged, create a virtual empty neighbor
+                block_to_the_right.begin = block_start + number_of_bytes;
+                block_to_the_right.size  = 0;
+            }
+        }
+
+        // create the new free memory block
+        MemoryBlock new_memory_block;
+        // block_to_the_left.begin corresponds to begin of the newly freed block if the left
+        // neighbor should not be merged, begin of the actual left neighbor otherwise
+        new_memory_block.begin = block_to_the_left.begin;
+        // block_to_the_left.size and block_to_the_right.size have value 0 if left and right neighbors
+        // should not be merged, number of elements in left and right neighbor otherwise
+        new_memory_block.size = block_to_the_left.size + number_of_bytes + block_to_the_right.size;
+
+        free_blocks_.insert(insert_free_block_before_iter, new_memory_block);
+
+        return cudaSuccess;
+    }
+
+    /// buffer size
+    const size_t buffer_size_;
+    /// preallocated buffer
+    const std::unique_ptr<char, void (*)(char*)> buffer_ptr_;
+    /// (de)allocation mutex
+    mutable std::mutex memory_operation_mutex_;
+
+    /// list of free block, sorted by memory block beginning location
+    std::list<MemoryBlock> free_blocks_;
+    /// list of block in use, sorted by memory block beginning location
+    std::list<MemoryBlock> used_blocks_;
+
+    /// number of bytes to align allocations to
+    static const int32_t alignment_ = 256; // if changing alignment update comments as well
+};
