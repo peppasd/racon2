@@ -12,6 +12,7 @@ namespace spoa
 
   enum class AlignmentType
   {
+    Sisd,
     Simd,
     Cuda,
     Multithread

@@ -1,7 +1,7 @@
 CXXCOMPILER = clang++
 CXXFLAGS = -std=c++20 -Iinclude/
 
-racon: main.o graph.o alignment_engine.o simd_alignment_engine.o
+racon: main.o graph.o alignment_engine.o simd_alignment_engine.o sisd_alignment_engine.o
 	$(CXXCOMPILER) $^ -o racon
 	rm *.o
 
@@ -19,3 +19,6 @@ alignment_engine.o: src/alignment_engine.cpp
 
 simd_alignment_engine.o: src/simd_alignment_engine.cpp
 	$(CXXCOMPILER) src/simd_alignment_engine.cpp $(CXXFLAGS) -DSIMDPP_DISPATCH_ARCH5=SIMDPP_ARCH_X86_AVX2 -mavx2 -c -o simd_alignment_engine.o
+
+sisd_alignment_engine.o: src/sisd_alignment_engine.cpp
+	$(CXXCOMPILER) src/sisd_alignment_engine.cpp $(CXXFLAGS) -c -o sisd_alignment_engine.o

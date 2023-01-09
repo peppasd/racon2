@@ -15,7 +15,7 @@ int main(int argc, char **argv)
       "CCGTAACCTTCATCGGATCACCGGAAAGGACCCGTAAATAGACCTGATTATCATCTACAT"};
 
   auto alignment_engine = spoa::AlignmentEngine::Create(
-      spoa::AlignmentType::Simd, 3, -5, -3);
+      spoa::AlignmentType::Sisd, 3, -5, -3);
 
   spoa::Graph graph{};
 
@@ -23,22 +23,22 @@ int main(int argc, char **argv)
   {
     auto alignment = alignment_engine->Align(it, graph);
     graph.AddAlignment(alignment, it);
-
-    auto consensus = graph.GenerateConsensus();
-
-    std::cerr << std::endl
-              << ">Consensus LN:i:" << consensus.size() << std::endl
-              << consensus << std::endl;
-
-    auto msa = graph.GenerateMultipleSequenceAlignment();
-
-    for (const auto &it : msa)
-    {
-      std::cerr << it << std::endl;
-    }
-
-    std::cout << std::endl;
   }
+
+  auto consensus = graph.GenerateConsensus();
+
+  std::cerr << std::endl
+            << ">Consensus LN:i:" << consensus.size() << std::endl
+            << consensus << std::endl;
+
+  auto msa = graph.GenerateMultipleSequenceAlignment();
+
+  for (const auto &it : msa)
+  {
+    std::cerr << it << std::endl;
+  }
+
+  std::cout << std::endl;
 
   return 0;
 }
