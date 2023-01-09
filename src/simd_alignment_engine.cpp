@@ -246,7 +246,7 @@ namespace spoa
       }
 
       if (!predecessor_found && H_ij == pimpl_->H[i * matrix_width + j - 1] + g_)
-      { // NOLINT
+      {
         prev_i = i;
         prev_j = j - 1;
         predecessor_found = true;

@@ -15,7 +15,7 @@ int main(int argc, char **argv)
       "CCGTAACCTTCATCGGATCACCGGAAAGGACCCGTAAATAGACCTGATTATCATCTACAT"};
 
   auto alignment_engine = spoa::AlignmentEngine::Create(
-      spoa::AlignmentType::Sisd, 3, -5, -3);
+      spoa::AlignmentType::Simd, 3, -5, -3);
 
   spoa::Graph graph{};
 
