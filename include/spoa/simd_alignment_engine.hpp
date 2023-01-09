@@ -33,10 +33,6 @@ namespace spoa
         std::int8_t n,
         std::int8_t g);
 
-    void Prealloc(
-        std::uint32_t max_sequence_len,
-        std::uint8_t alphabet_size) override;
-
     Alignment Align(
         const char *sequence, std::uint32_t sequence_len,
         const Graph &graph,
@@ -54,17 +50,10 @@ namespace spoa
         std::int8_t n,
         std::int8_t g);
 
-    // void Realloc(
-    //     std::uint64_t matrix_width,
-    //     std::uint64_t matrix_height,
-    //     std::uint8_t num_codes);
-
-    // void Initialize(
-    //     const char *sequence,
-    //     const Graph &graph,
-    //     std::uint64_t normal_matrix_width,
-    //     std::uint64_t matrix_width,
-    //     std::uint64_t matrix_height) noexcept;
+    void CreateSequenceProfile(
+        const Graph &graph,
+        const char *sequence,
+        std::uint32_t sequence_len);
 
     struct Implementation;
     std::unique_ptr<Implementation> pimpl_;

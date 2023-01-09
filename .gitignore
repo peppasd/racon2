@@ -32,3 +32,8 @@
 *.app
 
 .vscode/
+
+racon
+test
+src/test.cpp
+racon.dSYM/

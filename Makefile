@@ -5,6 +5,9 @@ racon: main.o graph.o alignment_engine.o simd_alignment_engine.o
 	$(CXXCOMPILER) $^ -o racon
 	rm *.o
 
+test: src/test.cpp
+	$(CXXCOMPILER) src/test.cpp $(CXXFLAGS) -DSIMDPP_DISPATCH_ARCH5=SIMDPP_ARCH_X86_AVX2 -mavx2 -o test
+
 main.o: src/main.cpp
 	$(CXXCOMPILER) src/main.cpp $(CXXFLAGS) -c -o main.o
 
