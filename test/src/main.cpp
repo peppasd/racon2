@@ -28,6 +28,8 @@
 #include <unistd.h>
 #include <getopt.h>
 
+#include <chrono>
+#include <thread>
 
 
 std::unique_ptr<Batch> initialize_batch(bool msa, const BatchConfig& batch_size)
@@ -150,6 +152,8 @@ int main(int argc, char** argv)
     bool print         = false;
     bool print_graph   = false;
     int32_t band_width = 256; // default band-width for static bands, and min band-width in adaptive bands
+
+    auto start = std::chrono::high_resolution_clock::now();
 
     while ((c = getopt(argc, argv, "mlb:pgh")) != -1)
     {
@@ -329,5 +333,9 @@ int main(int argc, char** argv)
 
         group_count_offset += get_size(batch_group_ids);
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    std::cout << duration << std::endl;
     return 0;
 }
