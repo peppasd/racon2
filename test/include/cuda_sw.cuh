@@ -1,6 +1,6 @@
 #pragma once 
 #define NW_VERBOSE_PRINT
-#define ATT
+#define ORI
 #define pv_edgenum_inblock 10
 
 #include "cuda_struct.cuh"
