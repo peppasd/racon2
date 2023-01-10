@@ -32,3 +32,11 @@
 *.app
 
 .vscode/
+
+racon
+test
+src/test.cpp
+racon.dSYM/
+
+src/xsimd_alignment_engine.cpp
+include/spoa/xsimd_alignment_engine.hpp

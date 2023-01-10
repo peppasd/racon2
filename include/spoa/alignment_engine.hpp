@@ -1,9 +1,5 @@
-// Copyright (c) 2020 Robert Vaser
-
 #ifndef SPOA_ALIGNMENT_ENGINE_HPP_
 #define SPOA_ALIGNMENT_ENGINE_HPP_
-
-#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -16,7 +12,9 @@ namespace spoa
 
   enum class AlignmentType
   {
+    Sisd,
     Simd,
+    // XSimd,
     Cuda,
     Multithread
   };
@@ -35,9 +33,9 @@ namespace spoa
         std::int8_t n,  // mismatch
         std::int8_t g); // gap
 
-    virtual void Prealloc(
-        std::uint32_t max_sequence_len,
-        std::uint8_t alphabet_size) = 0;
+    // virtual void Prealloc(
+    //     std::uint32_t max_sequence_len,
+    //     std::uint8_t alphabet_size) = 0;
 
     Alignment Align(
         const std::string &sequence,
