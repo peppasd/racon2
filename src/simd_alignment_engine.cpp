@@ -6,7 +6,7 @@
 namespace spoa
 {
   const int SIMD_VECTOR_SIZE = 8;
-  typedef simdpp::uint32<SIMD_VECTOR_SIZE> xuint;
+  typedef simdpp::int32<SIMD_VECTOR_SIZE> xint32;
 
   std::unique_ptr<AlignmentEngine> CreateSimdAlignmentEngine(
       std::int8_t m,
@@ -69,7 +69,10 @@ namespace spoa
       return Alignment();
     }
 
-    std::uint32_t matrix_width = sequence_len + 1;
+    std::int32_t kNegativeInfinity = std::numeric_limits<std::int32_t>::min() + 1024;
+    // SIMD padded matrix_width
+    std::uint32_t matrix_width = sequence_len + 1 + (SIMD_VECTOR_SIZE - (sequence_len + 1) % SIMD_VECTOR_SIZE);
+    std::uint32_t vector_matrix_width = matrix_width / SIMD_VECTOR_SIZE;
     std::uint32_t matrix_height = graph.nodes().size() + 1;
     std::uint8_t num_codes = graph.num_codes();
 
@@ -87,10 +90,14 @@ namespace spoa
     {
       char c = graph.decoder(i);
       pimpl_->sequence_profile[i * matrix_width] = 0;
-      for (std::uint32_t j = 0; j < sequence_len; ++j)
+
+      for (std::uint32_t j = 0; j < vector_matrix_width; ++j)
       {
-        pimpl_->sequence_profile[i * matrix_width + (j + 1)] =
-            (c == sequence[j] ? m_ : n_);
+        for (std::uint32_t k = 0; k < SIMD_VECTOR_SIZE; ++k)
+        {
+          pimpl_->sequence_profile[i * matrix_width + (j * SIMD_VECTOR_SIZE + k)] =
+              j * SIMD_VECTOR_SIZE + k < sequence_len ? (c == sequence[j] ? m_ : n_) : 0;
+        }
       }
     }
 
@@ -100,22 +107,9 @@ namespace spoa
       pimpl_->node_id_to_rank[rank_to_node[i]->id] = i;
     }
 
-    std::int32_t max_score = 0;
-    std::uint32_t max_i = 0;
-    std::uint32_t max_j = 0;
-    auto update_max_score = [&max_score, &max_i, &max_j](
-                                std::int32_t *H_row,
-                                std::uint32_t i,
-                                std::uint32_t j) -> void
-    {
-      if (max_score < H_row[j])
-      {
-        max_score = H_row[j];
-        max_i = i;
-        max_j = j;
-      }
-      return;
-    };
+    std::int32_t max_score = kNegativeInfinity;
+    std::uint32_t max_i = -1;
+    std::uint32_t max_j = -1;
 
     // alignment
     for (const auto &it : rank_to_node)
@@ -129,12 +123,28 @@ namespace spoa
       std::int32_t *H_row = &(pimpl_->H[i * matrix_width]);
       std::int32_t *H_pred_row = &(pimpl_->H[pred_i * matrix_width]);
 
+      int32_t fill_array[SIMD_VECTOR_SIZE];
+      std::fill_n(fill_array, SIMD_VECTOR_SIZE, g_);
+      xint32 xg = simdpp::load(fill_array);
+
+      std::fill_n(fill_array, SIMD_VECTOR_SIZE, 0);
+      xint32 xZero = simdpp::load(fill_array);
+
+      xint32 x = xZero;
       // update H
-      for (std::uint64_t j = 1; j < matrix_width; ++j)
+      for (std::uint32_t vector_j = 1; vector_j < vector_matrix_width; ++vector_j)
       {
-        H_row[j] = std::max(
-            H_pred_row[j - 1] + char_profile[j],
-            H_pred_row[j] + g_);
+        std::uint32_t j = vector_j * SIMD_VECTOR_SIZE;
+
+        xint32 xChar_Profile = simdpp::load(char_profile + j);
+        xint32 xH_pred_row = simdpp::load(H_pred_row + j);
+        xint32 xH_row = (xH_pred_row << 4) | x;
+
+        x = xH_pred_row >> 28;
+
+        xH_row = simdpp::max(xH_row + xChar_Profile, xH_pred_row + xg);
+
+        simdpp::store(H_row + j, xH_row);
       }
       // check other predeccessors
       for (std::uint32_t p = 1; p < it->inedges.size(); ++p)
@@ -143,31 +153,70 @@ namespace spoa
 
         H_pred_row = &(pimpl_->H[pred_i * matrix_width]);
 
-        for (std::uint64_t j = 1; j < matrix_width; ++j)
+        x = xZero;
+
+        for (std::uint32_t vector_j = 1; vector_j < vector_matrix_width; ++vector_j)
         {
-          H_row[j] = std::max(
-              H_pred_row[j - 1] + char_profile[j],
-              std::max(
-                  H_row[j],
-                  H_pred_row[j] + g_));
+          std::uint32_t j = vector_j * SIMD_VECTOR_SIZE;
+
+          xint32 xChar_Profile = simdpp::load(char_profile + j);
+          xint32 xH_pred_row = simdpp::load(H_pred_row + j);
+          xint32 xH_row = simdpp::load(H_row + j);
+          xint32 xM = (xH_pred_row << 4) | x;
+
+          x = xH_pred_row >> 28;
+
+          xH_row = simdpp::max(xH_row, simdpp::max(xM + xChar_Profile, xH_pred_row + xg));
+
+          simdpp::store(H_row + j, xH_row);
         }
       }
+      std::fill_n(fill_array, SIMD_VECTOR_SIZE, kNegativeInfinity);
+      xint32 score = simdpp::load(fill_array);
+      x = xg >> 28;
 
-      for (std::uint64_t j = 1; j < matrix_width; ++j)
+      for (std::uint32_t vector_j = 1; vector_j < vector_matrix_width; ++vector_j)
       {
-        H_row[j] = std::max(H_row[j - 1] + g_, H_row[j]);
-        H_row[j] = std::max(H_row[j], 0);
-        update_max_score(H_row, i, j);
+        std::uint32_t j = vector_j * SIMD_VECTOR_SIZE;
+        xint32 xH_row = simdpp::load(H_row + j);
+
+        // TODO masks
+        xH_row = simdpp::max(xH_row, x);
+
+        // TODO prefix max
+        x = (xH_row + xg) >> 28;
+
+        xH_row = simdpp::max(xH_row, xZero);
+        score = simdpp::max(score, xH_row);
+
+        simdpp::store(H_row + j, xH_row);
+      }
+
+      std::int32_t max_row_score = simdpp::reduce_max(score);
+      if (max_score < max_row_score)
+      {
+        max_score = max_row_score;
+        max_i = i;
       }
     }
 
-    if (max_i == 0 && max_j == 0)
+    if (max_i == -1 && max_j == -1)
     {
       return Alignment();
     }
     if (score)
     {
       *score = max_score;
+    }
+
+    std::int32_t *H_row = &(pimpl_->H[max_i * matrix_width]);
+    for (std::uint32_t j = 1; j < matrix_width; ++j)
+    {
+      if (H_row[j] == max_score)
+      {
+        max_j = j;
+        break;
+      }
     }
 
     // backtrack
