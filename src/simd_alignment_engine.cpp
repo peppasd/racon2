@@ -96,7 +96,7 @@ namespace spoa
         for (std::uint32_t k = 0; k < SIMD_VECTOR_SIZE; ++k)
         {
           pimpl_->sequence_profile[i * matrix_width + (j * SIMD_VECTOR_SIZE + k)] =
-              j * SIMD_VECTOR_SIZE + k < sequence_len ? (c == sequence[j] ? m_ : n_) : 0;
+              j * SIMD_VECTOR_SIZE + k < sequence_len ? (c == sequence[j] ? m_ : n_) : -1;
         }
       }
     }

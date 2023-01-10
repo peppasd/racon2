@@ -1,5 +1,6 @@
 #include "spoa/alignment_engine.hpp"
 #include "spoa/simd_alignment_engine.hpp"
+// #include "spoa/xsimd_alignment_engine.hpp"
 #include "spoa/sisd_alignment_engine.hpp"
 // #include "spoa/cuda_alignment_engine.hpp"
 // #include "spoa/multithread_alignment_engine.hpp"
@@ -31,6 +32,9 @@ namespace spoa
     case AlignmentType::Simd:
       dst = CreateSimdAlignmentEngine(m, n, g);
       break;
+    // case AlignmentType::XSimd:
+    //   dst = CreateXSimdAlignmentEngine(m, n, g);
+    //   break;
     case AlignmentType::Sisd:
       dst = CreateSisdAlignmentEngine(m, n, g);
       break;

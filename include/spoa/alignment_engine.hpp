@@ -14,6 +14,7 @@ namespace spoa
   {
     Sisd,
     Simd,
+    // XSimd,
     Cuda,
     Multithread
   };
