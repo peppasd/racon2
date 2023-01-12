@@ -153,8 +153,6 @@ int main(int argc, char** argv)
     bool print_graph   = false;
     int32_t band_width = 256; // default band-width for static bands, and min band-width in adaptive bands
 
-    auto start = std::chrono::high_resolution_clock::now();
-
     while ((c = getopt(argc, argv, "mlb:pgh")) != -1)
     {
         switch (c)
@@ -213,7 +211,7 @@ int main(int argc, char** argv)
         parse_cudapoa_file(windows, input_file, 1000);
     }
 
-
+    auto start = std::chrono::steady_clock::now();
     // Create a vector of POA groups based on windows
     std::vector<Group> poa_groups(windows.size());
     for (int32_t i = 0; i < get_size(windows); ++i)
@@ -334,8 +332,10 @@ int main(int argc, char** argv)
         group_count_offset += get_size(batch_group_ids);
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    std::cout << duration << std::endl;
+    auto duration = std::chrono::steady_clock::now() - start;
+    int serial_time = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+    std::cout << "serial done" << std::endl;
+    std::cout << "cost " << serial_time << " ms" << std::endl; 
     return 0;
 }
