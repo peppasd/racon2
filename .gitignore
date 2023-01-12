@@ -32,3 +32,15 @@
 *.app
 
 .vscode/
+
+racon
+benchmark
+benchmark_simd_new
+benchmark_simd_old
+benchmark_sisd
+benchmark_sisd_o2
+src/test.cpp
+racon.dSYM/
+
+src/xsimd_alignment_engine.cpp
+include/spoa/xsimd_alignment_engine.hpp
