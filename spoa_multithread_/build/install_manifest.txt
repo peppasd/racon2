@@ -1,0 +1,10 @@
+/usr/local/lib/libspoa.a
+/usr/local/include/spoa/architectures.hpp
+/usr/local/include/spoa/graph.hpp
+/usr/local/include/spoa/spoa.hpp
+/usr/local/include/spoa/alignment_engine.hpp
+/usr/local/lib/cmake/spoa/spoaTargets.cmake
+/usr/local/lib/cmake/spoa/spoaTargets-release.cmake
+/usr/local/lib/cmake/spoa/spoaConfig.cmake
+/usr/local/lib/cmake/spoa/spoaConfigVersion.cmake
+/usr/local/bin/spoa

@@ -1,0 +1,1 @@
+/usr/bin/g++  -Wall -Wextra -pedantic -Wno-aligned-new -Wno-ignored-attributes -march=native -O3 -DNDEBUG CMakeFiles/spoa_test.dir/test/spoa_test.cpp.o -o bin/spoa_test  lib/libspoa.a lib/libgtest_main.a /usr/lib/x86_64-linux-gnu/libz.so lib/libgtest.a 

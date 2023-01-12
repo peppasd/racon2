@@ -1,0 +1,1 @@
+/usr/bin/g++  -Wall -Wextra -pedantic -Wno-aligned-new -Wno-ignored-attributes -march=native -O3 -DNDEBUG CMakeFiles/spoa_exe.dir/src/main.cpp.o -o bin/spoa  lib/libspoa.a /usr/lib/x86_64-linux-gnu/libz.so 

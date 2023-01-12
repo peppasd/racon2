@@ -1,0 +1,3 @@
+repository='https://github.com/rvaser/biosoup'
+module=''
+tag='origin'
